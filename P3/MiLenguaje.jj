@@ -1,0 +1,136 @@
+/**
+ * Especificación JavaCC para la Práctica 3 (Procesadores de Lenguajes)
+ * Javier Fabra - jfabra@unizar.es
+ * v2.1 - 2020/03/20
+ */
+options
+{
+  static = true;
+  ignore_case = true;
+}
+
+PARSER_BEGIN(MiLenguaje)
+
+public class MiLenguaje
+{
+  public static void main(String args []) throws ParseException
+  {
+    MiLenguaje parser = new MiLenguaje(System.in);
+    System.out.println("Leyendo de la entrada estándar...");
+    try { 
+    	MiLenguaje.programa();
+    	System.out.println("Analizado correctamente");
+    }
+    catch (Exception e) {
+		System.out.println("NOK.");
+        System.out.println(e.getMessage());
+        MiLenguaje.ReInit(System.in);
+	}
+    catch (Error e) { 
+        System.out.println("Oops.");
+        System.out.println(e.getMessage());
+	}
+  }
+}
+
+PARSER_END(MiLenguaje)
+
+SKIP :
+{
+  " "
+| "\r"
+| "\t"
+| "\n"
+}
+
+TOKEN : /* PALABRAS RESERVADAS */
+{
+  < tCLASE : "clase" >
+  {
+    System.out.println("CLASE");
+  }
+| < tMETODO : "metodo" >
+  {
+    System.out.println("METODO");
+  }
+  
+}
+
+TOKEN : /* TIPOS DE DATOS */
+{
+  < tENTERO : "entero" >
+  {
+    System.out.println("ENTERO");
+  }
+| < tDECIMAL : "decimal" >
+  {
+    System.out.println("DECIMAL");
+  }
+}
+
+TOKEN : /* AGRUPACIONES */
+{
+  <  tLLAVE_IZQ : "{" >
+  {
+    System.out.println("LLAVE_IZQ");
+  }
+| <  tLLAVE_DCHA : "}" >
+  {
+    System.out.println("LLAVE_DCHA");
+  }
+}
+
+TOKEN : /* VALORES */
+{
+  < #DIGITO : ["0"-"9"] >
+| < #LETRA : ["a"-"z","_","0"-"9"] >
+| < tVALOR_ENTERO : ("-")?(< DIGITO >)+ >
+  {
+    System.out.println("VALOR_ENTERO (Valor: " + matchedToken + ")");
+  }
+| <  tVALOR_DECIMAL : ("-")?(< DIGITO >)+"."(< DIGITO >)+ >
+  {
+    System.out.println("VALOR_DECIMAL (Valor: " + matchedToken + ")");
+  }
+| <  tIDENTIFICADOR : (< LETRA >)+ >
+  {
+    System.out.println("IDENTIFICADOR (Valor: " + matchedToken + ")");
+  }
+}
+
+
+TOKEN : /* OPERADORES */
+{
+  <  tASIGNACION : "=" >
+  {
+    System.out.println("ASIGNACION");
+  }
+| <  tFIN_SENTENCIA : ";" >
+  {
+    System.out.println("FIN_SENTENCIA");
+  }
+}
+
+
+void programa():
+{
+}
+{
+  < tCLASE > < tIDENTIFICADOR > < tLLAVE_IZQ > (metodo())+ < tLLAVE_DCHA >
+}
+
+void sentencia():
+{
+}
+{
+  	< tENTERO > < tIDENTIFICADOR > <tASIGNACION > < tVALOR_ENTERO > < tFIN_SENTENCIA >
+ | < tDECIMAL > < tIDENTIFICADOR > <tASIGNACION > < tVALOR_DECIMAL > < tFIN_SENTENCIA >
+}
+
+void metodo():
+{
+}
+{
+  	< tMETODO > < tIDENTIFICADOR > "{" (sentencia())* "}"
+}
+

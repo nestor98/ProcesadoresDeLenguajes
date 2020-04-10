@@ -1,0 +1,357 @@
+/**
+ * JavaCC template file created by SF JavaCC plugin 1.5.28+ wizard for JavaCC 1.5.0+
+ */options{  static = true;
+  //debug_parser = true;
+  ignore_case =true;}PARSER_BEGIN(minilengcompiler)
+
+import java.io.FileReader;
+import java.io.BufferedReader;
+import java.util.Scanner;
+
+
+
+
+public class minilengcompiler{
+  static int n_ident = 0;  public static void main(String args []) throws ParseException  {	//Scanner s = new Scanner(System.in);
+	Boolean verboso = args.length > 1 && args[1] == "-v"; // Es verboso si tenemos dos argumentos y el segundo es "-v"
+	
+
+
+
+	try { // Por si no existe el fichero
+		BufferedReader br = new BufferedReader(new FileReader(args[0]));
+		minilengcompiler parser = new minilengcompiler(br);		//      System.out.print("Escribe el nombre del fichero a analizar : ");
+		
+	  	try
+	      {
+	        minilengcompiler.programa();
+	        System.out.println("Correcto");// si estamos aqui, se ha analizado correctamente
+	      }
+	      catch (Exception e)
+	      {
+	        System.out.println("Error sintactico.");
+	        System.out.println(e.getMessage());
+	        minilengcompiler.ReInit(System.in);
+	      }
+	      catch (TokenMgrError e)
+	      {
+	        // "ERROR LÉXICO (<línea, columna>): símbolo no reconocido: <símbolo>"
+	        //System.out.println("ERROR LÉXICO (<línea, columna>): símbolo no reconocido: <símbolo>");
+	        System.out.println(e.getMessage());
+	      }
+	 }
+	 catch (Exception e) {
+		System.out.println("No se ha encontrado el fichero");
+	 }
+	 // Resumen
+	 if (verboso) { 
+	 System.out.println(resumenTokens());
+	}	  	}
+
+	public static String resumenTokens() {
+		return "Número de identificadores: " + n_ident;
+
+	}  }PARSER_END(minilengcompiler)// < * > para que se aplique a todos los lexical states< * > SKIP :{  " "| "\r"| "\t"| "\n"
+| < ("%") (~["\n"])* ("\n") > // Comentario de una linea, empieza por % y acaba con el salto de linea}
+TOKEN_MGR_DECLS : // Variables para contar ocurrencias:
+{
+	//static int n_ident = 0;
+}
+
+TOKEN : /* Cadenas de car antes de lo demás (pueden tener cualquier cosa dentro) */ 
+{
+  < #COMILLAS : "\"" >
+  // Un caracter entre comillas:
+| < CONSTCAR : < COMILLAS > ~["\""] < COMILLAS > > 
+  // Una cadena entre comillas:
+| < CONSTCAD : (< COMILLAS >) (~["\""])* (< COMILLAS >) > 
+}
+TOKEN : /* OPERATORS */ {  < MAS : "+" >| < MENOS : "-" >| < MULT : "*" >| < DIVIDIR : "/" >
+
+| < MOD : "mod" >
+| < DIV : "div" >
+
+| < AND : "and" >
+| < OR : "or" >
+| < NOT : "not" >
+
+| < IGUAL : "=" >
+| < MENIGUAL : "<=" >
+| < MAYIGUAL : ">=" >
+| < MENOR : "<" >
+| < MAYOR : ">" >
+| < DISTINTO : "<>" >
+
+| < ABRIRPAR : "(" >
+| < CERRARPAR : ")" >
+
+| < ASIGNAR : ":=" >
+| < PUNTOCOMA : ";" >
+| < COMA : "," >}
+
+TOKEN : // Reservadas
+{
+  < PROGRAMA : "programa" >
+| < PRINCIPIO : "principio" >
+| < FIN : "fin" >
+| < CAR : "caracter" >
+| < BOOL : "booleano" >
+| < ENT : "entero" >
+| < ACCION : "accion" >
+| < VAL : "val" >
+| < REF: "ref" >
+
+| < MIENTRAS: "mq" >
+| < FINMIENTRAS: "FMq" >
+| < SI : "si" >
+| < SINO : "si_no" >
+| < FINSI : "Fsi" >
+| < ENTONCES: "ent" >
+
+| < ENTACAR : "entacar" >
+| < CARAENT : "caraent" >
+
+| < LEER : "leer" >
+| < ESCRIBIR : "escribir" >
+
+//| < CLASE : "Clase" >
+//| < METODO : "Metodo" >
+//| < TIPO : ("entero")|("decimal") >
+}
+
+TOKEN : // Valores{
+ < TRUE : "true" >
+| < FALSE : "false" >| < CONSTENT : (< DIGIT >)+ >| < #DIGIT : [ "0"-"9" ] >
+| < VALOR_DECIMAL : ("-")? (< DIGIT >)+"."(< DIGIT >)+ >
+| < #LETRA : ["a"-"z"] >
+| < #ALFANUM: (< LETRA > | < DIGIT >) >
+| < IDENTIFICADOR : ( < LETRA > | ("_")) ( < ALFANUM > | ("_") )* (< ALFANUM >)
+				  | (< LETRA >) >
+// No empieza por num y no acaba por '_': (Letra/barrabaja (Letra/barrabaja/num)* Letra/num) | Letra
+				  {
+				    System.out.println("Reconocido identificador: " + matchedToken);
+				    minilengcompiler.n_ident++;
+				    }}int programa() :{}{
+  < PROGRAMA > < IDENTIFICADOR > ";"
+  declaracion_variables() declaracion_acciones() bloque_sentencias()
+  < EOF > // EOF predefinido, para usar ficheros  {    return 0;  }}
+
+void declaracion_variables() :
+{}
+{
+	(declaracion() ";")*
+}
+void declaracion() :
+{}
+{
+	  tipo_variables() identificadores()
+}
+
+void tipo_variables() :
+{}
+{
+	(< ENT > | < CAR > | < BOOL >)
+}
+
+void identificadores() :
+{}
+{
+	< IDENTIFICADOR > ("," < IDENTIFICADOR >)* 
+}
+
+void declaracion_acciones() :
+{}
+{
+	(declaracion_accion())*
+}
+
+void declaracion_accion() :
+{}
+{
+	cabecera_accion() ";" declaracion_variables() declaracion_acciones() bloque_sentencias()
+}
+
+void cabecera_accion() :
+{}
+{
+	< ACCION > < IDENTIFICADOR > parametros_formales()
+}
+
+void parametros_formales() :
+{}
+{	// Si no hay parametros pueden omitirse los parentesis:
+	("(" (lista_parametros())? ")")?
+}
+
+void lista_parametros() :
+{}
+{	// uno o más
+	parametros() (";" parametros())*
+}
+
+void parametros() :
+{}
+{   // Original : clase_parametros tipo_variables lista_parametros
+	clase_parametros() tipo_variables() identificadores()
+}
+
+
+void clase_parametros() :
+{}
+{
+	< VAL > | < REF >
+}
+
+void bloque_sentencias() :
+{}
+{
+	< PRINCIPIO > lista_sentencias() < FIN >
+}
+
+void lista_sentencias() :
+{}
+{ 	// Puede haber 0 sentencias
+	(sentencia())*
+}
+
+void sentencia() :
+{}
+{ 
+	leer() ";" | escribir() ";" | asignacion_o_invocacion() | seleccion() | mientras_que()
+}
+
+void leer() :
+{}
+{ 
+	< LEER > "(" lista_asignables() ")"
+}
+
+void lista_asignables() :
+{}
+{ 	// Debe recibir al menos uno, como identificadores:
+	identificadores()
+}
+
+void escribir() :
+{}
+{ 
+	< ESCRIBIR > "(" lista_escribibles() ")"
+}
+
+void lista_escribibles() :
+{}
+{ 	// Se puede escribir cualquier expresion, creo (expresion es algo que devuelve un valor y se puede mostrar cualquier valor)
+	expresion() ("," expresion())*
+}
+
+void asignacion_o_invocacion() :
+{}
+{	// Para evitar el conflicto sin aumentar el lookahead
+	< IDENTIFICADOR > (asignacion() | invocacion_accion()) ";"
+}
+
+
+void asignacion() :
+{}
+{
+	< ASIGNAR > expresion()
+}
+
+void invocacion_accion() :
+{}
+{ // TODO:
+	(argumentos())?
+}
+
+void mientras_que() :
+{}
+{ // TODO:
+	< MIENTRAS > expresion() lista_sentencias() < FINMIENTRAS >
+}
+
+void seleccion() :
+{}
+{ 	// si (condicion) ent (sentencias) (si_no)? fsi
+	< SI > expresion() < ENTONCES > lista_sentencias() (si_no())? < FINSI >
+}
+
+void si_no() :
+{}
+{ 	// si_no, sin condicion
+	< SINO > lista_sentencias()
+}
+
+void argumentos() :
+{}
+{
+	"(" (lista_expresiones())? ")"
+}
+
+void lista_expresiones() :
+{}
+{ 
+	expresion() ("," expresion())*
+}
+
+void expresion() :
+{}
+{ 	// comparaciones de expresiones simples (sumas de multiplicaciones)
+	expresion_simple() (operador_relacional() expresion_simple())*
+}
+
+void operador_relacional() :
+{}
+{ 	// Los de comparación
+	< IGUAL > | < MENIGUAL > | < MAYIGUAL > | < MENOR > | < MAYOR > | < DISTINTO >  
+}
+
+void expresion_simple() :
+{}
+{ 	// "sumas" de "multiplicaciones" de factores (es decir, prioridad a multiplicación)
+	termino() (operador_aditivo() termino())*
+}
+
+void operador_aditivo() :
+{}
+{ // +, - y or
+	< MAS > | < MENOS > | < OR >
+}
+
+void termino() :
+{}
+{ // prioridad a multiplicativos: factor (mult factor)*
+	factor() (operador_multiplicativo() factor())*
+}
+
+void operador_multiplicativo() :
+{}
+{ // *, div, mod y and
+	< MULT > | < DIV > | < MOD > | < AND > 
+}
+
+
+void factor() :
+{}
+{ 
+	"-" factor() | < NOT > factor() | "(" expresion() ")"
+	| < ENTACAR > "(" expresion() ")" | < CARAENT > "(" expresion() ")"
+	| < IDENTIFICADOR > | < CONSTENT > | < CONSTCAR > | < CONSTCAD >
+	| < TRUE > | < FALSE >
+}
+
+
+
+/* de la primera prácticavoid clase() :{}{
+
+	(< CLASE >)(< IDENTIFICADOR >) ("{") (metodo())* ("}")}
+
+void metodo() : { }
+{
+	(< METODO >)(< IDENTIFICADOR >) ("{") (linea())* ("}")
+}
+
+void linea() : { }
+{
+	(< TIPO >) (< IDENTIFICADOR >) (< EQUALS >) ( < VALOR_ENTERO > | < VALOR_DECIMAL > ) (";")
+}
+*/
