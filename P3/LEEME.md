@@ -34,21 +34,23 @@ principio
 % sentencias, al menos una
 fin
 ```
-Las acciones pueden definirse con parámetros por valor o referencia. Si una accion no tiene parámetros se pueden omitir los paréntesis:
+Las acciones pueden definirse con parámetros por valor o referencia. Si una accion no tiene parámetros se pueden omitir los paréntesis. Así,
+las dos expresiones siguientes son equivalentes:
 ```
 accion a;
 accion a();
 ```
-son equivalentes.
-A continuación, las acciones siguen la misma estructura que los programas, y también permiten la definición de más acciones anidadas.
+
+Las acciones siguen la misma estructura que los programas, y también permiten la definición de más acciones anidadas.
 Todos los bloques de sentencias (entre principio y fin) deben contener al menos una sentencia.
 
 La gramática se ha construido de forma que los operadores multiplicativos (como "and", mod, etc.) tienen preferencia sobre los aditivos
 (como "+", "or", etc.), y estos a su vez sobre los relacionales (comparaciones, como <>, =, <, etc.). La gramática permite modificar la
 preferencia utilizando paréntesis, como es común en otros lenguajes de programación.
 
+En cuanto a los errores, se ha dividido la gramática lo máximo posible para identificar las causas de la mayoría de los errores más comunes.
+Así, el compilador no solo dice el símbolo en el que ha detectado el error sintáctico, sino que muestra el que esperaba.
 
-
-Se ha implementado un panic mode, de momento solo integrado con los ';' (al detectar que falta uno, ignora la entrada hasta el siguiente o el final
+Se ha implementado un panic mode para el error en el que falta un ';' (al detectar que falta uno, ignora la entrada hasta el siguiente o el final
 del fichero), aunque es aplicable para cualquier otro token. Podría resultar interesante también para los distintos marcadores de fin de bloque
-("fmq", "fsi", "fin") .
+("fmq", "fsi", "fin").

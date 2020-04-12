@@ -5,30 +5,17 @@
   ignore_case =true;}PARSER_BEGIN(minilengcompiler)
 
 import java.io.FileInputStream;
-//import java.io.BufferedReader;
-//import java.util.Scanner;
-
-//import MiTokenMgrError;
 
 
 public class minilengcompiler{
-  static int n_ident = 0;  public static void main(String args []) throws ParseException, MiTokenMgrError  {	//Scanner s = new Scanner(System.in);
+  static int n_ident = 0;  public static void main(String args []) throws ParseException, MiTokenMgrError  {
 	Boolean verboso = args.length > 1 && args[1] == "-v"; // Es verboso si tenemos dos argumentos y el segundo es "-v"
 	try { // Por si no existe el fichero
 		FileInputStream fi = new FileInputStream(args[0]);
 		minilengcompiler parser = new minilengcompiler(fi);		//      System.out.print("Escribe el nombre del fichero a analizar : ");
-		
-	  	try
-	      {
-	        minilengcompiler.programa();
-	      }
-	      catch (ParseException e)
-	      {
-	        System.out.println("Error sintáctico no clasificado.");
-	        errorSintactico(e, "");
-	        System.out.println(e.getMessage());
-	        minilengcompiler.ReInit(System.in);
-	      }
+		try { 
+			minilengcompiler.programa();
+		}
 	      catch (TokenMgrError e)
 	      { // No he conseguido que lance MiTokenMgrError en lugar de TokenMgrError
 			// System.out.println(e.getMessage()); // Esto funcionaria si lanzase MiTokenMgrError
@@ -74,24 +61,17 @@ public class minilengcompiler{
 	// (el parámetro tipoSeguro puede ser el identificador de un token del léxico, por ej PUNTOCOMA, ya que es un entero)
     private static void panicMode(ParseException e, int tipoSeguro) {
 		  Token t;
-		  // consume tokens all the way up to a token of "kind" - use a do-while loop
-		  // rather than a while because the current token is the one immediately before
-		  // the erroneous token (in our case the token immediately before what should
-		  // have been "if"/"while".
-		  errorSintactico(e, "<;> (PANIC MODE)");
+		  errorSintactico(e, "<;> (PANIC MODE)"); // mostramos el origen del error
 		  do {
 		    t = getNextToken();
 		  }
-		  while (t.kind != tipoSeguro && t.kind != EOF);
+		  while (t.kind != tipoSeguro && t.kind != EOF); // e ignoramos la entrada hasta el siguiente token seguro
 
 
 			
 		    	}}PARSER_END(minilengcompiler)// < * > para que se aplique a todos los lexical states< * > SKIP :{  " "| "\r"| "\t"| "\n"
 | < ("%") (~["\n"])* ("\n") > // Comentario de una linea, empieza por % y acaba con el salto de linea}
-TOKEN_MGR_DECLS : // Variables para contar ocurrencias:
-{
-	//static int n_ident = 0;
-}
+
 
 TOKEN : /* Cadenas de car antes de lo demás (pueden tener cualquier cosa dentro) */ 
 {
