@@ -21,11 +21,11 @@ public class minilengcompiler{
 	  	try
 	      {
 	        minilengcompiler.programa();
-	        System.out.println("Correcto");// si estamos aqui, se ha analizado correctamente
 	      }
-	      catch (Exception e)
+	      catch (ParseException e)
 	      {
 	        System.out.println("Error sintáctico no clasificado.");
+	        errorSintactico(e, "");
 	        System.out.println(e.getMessage());
 	        minilengcompiler.ReInit(System.in);
 	      }
@@ -51,7 +51,42 @@ public class minilengcompiler{
 	public static String resumenTokens() {
 		return "Número de identificadores: " + n_ident;
 
-	}  }PARSER_END(minilengcompiler)// < * > para que se aplique a todos los lexical states< * > SKIP :{  " "| "\r"| "\t"| "\n"
+	}
+
+
+	// Muestra por pantalla un error sintáctico. Especifica línea y columna, el símbolo que ha obtenido y el que esperaba:
+	private static void errorSintactico(ParseException e, String esperaba) {
+        Token ultimo = minilengcompiler.getNextToken(); // el del error es el siguiente, ya que no ha hecho match todavía
+        if (!esperaba.isEmpty()) { // si <esperaba> no está vacía, la completamos para la string final:
+			esperaba = ". Esperaba " + esperaba;
+        }
+        else {
+			esperaba = ". Error desconocido"; 
+			// Aquí se puede personalizar un mensaje para los errores sintácticos inesperados (no debería darse nunca)
+        }
+	    System.out.println("ERROR SINTÁCTICO (<" + ultimo.beginLine + ", " + ultimo.beginColumn +
+	    	">): Símbolo obtenido: <" + ultimo.image + ">" + esperaba + ".");
+	    	
+    }
+
+	// Modo de pánico, ignora la entrada hasta encontrar un token de tipo <tipoSeguro> o el EOF.
+	// Implementación basada en la documentación de JavaCC: https://javacc.github.io/javacc/tutorials/error-handling.html
+	// (el parámetro tipoSeguro puede ser el identificador de un token del léxico, por ej PUNTOCOMA, ya que es un entero)
+    private static void panicMode(ParseException e, int tipoSeguro) {
+		  Token t;
+		  // consume tokens all the way up to a token of "kind" - use a do-while loop
+		  // rather than a while because the current token is the one immediately before
+		  // the erroneous token (in our case the token immediately before what should
+		  // have been "if"/"while".
+		  errorSintactico(e, "<;> (PANIC MODE)");
+		  do {
+		    t = getNextToken();
+		  }
+		  while (t.kind != tipoSeguro && t.kind != EOF);
+
+
+			
+		    	}}PARSER_END(minilengcompiler)// < * > para que se aplique a todos los lexical states< * > SKIP :{  " "| "\r"| "\t"| "\n"
 | < ("%") (~["\n"])* ("\n") > // Comentario de una linea, empieza por % y acaba con el salto de linea}
 TOKEN_MGR_DECLS : // Variables para contar ocurrencias:
 {
@@ -131,15 +166,63 @@ TOKEN : // Reservadas
 				  {
 				    //System.out.println("Reconocido identificador: " + matchedToken);
 				    minilengcompiler.n_ident++;
-				  }}int programa() :{}{
-  < PROGRAMA > < IDENTIFICADOR > ";"
-  declaracion_variables() declaracion_acciones() bloque_sentencias()
-  < EOF > // EOF predefinido, para usar ficheros  {    return 0;  }}
+				  }}
 
-void declaracion_variables() :
+/************************************************************/
+/* Gramática:												*/
+/************************************************************/
+int programa() :{}{
+  try {
+      directiva_programa() identificador() puntocoma()
+	  declaracion_variables() declaracion_acciones() bloque_sentencias()
+	  < EOF > // EOF predefinido, para usar ficheros
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "");
+  }  {    return 0;  }}
+
+
+// Separamos todos los terminales en funciones aparte para permitir mayor detalle en los errores:
+void directiva_programa() :
 {}
 {
-	(declaracion() ";")*
+  try {
+      < PROGRAMA >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<programa>");
+  }
+}
+
+void identificador() :
+{}
+{
+  try {
+      < IDENTIFICADOR >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "un identificador");
+  }
+}
+
+
+void puntocoma() :
+{}
+{
+  try {
+      ";"
+  }
+  catch (ParseException e) {
+	//errorSintactico(e, "<;>");
+	panicMode(e, PUNTOCOMA); // ignora hasta el siguiente ";" o EOF
+  }
+}
+  
+void declaracion_variables() :
+{}
+{ 
+  (declaracion() puntocoma())*
+
 }
 void declaracion() :
 {}
@@ -150,13 +233,29 @@ void declaracion_variables() :
 void tipo_variables() :
 {}
 {
+  try {
 	(< ENT > | < CAR > | < BOOL >)
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "un tipo de variable (<entero>, <caracter> o <booleano>)");
+  }
 }
 
 void identificadores() :
 {}
 {
-	< IDENTIFICADOR > ("," < IDENTIFICADOR >)* 
+	identificador() (coma() identificador())* 
+}
+
+void coma() :
+{}
+{
+  try {
+	","
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<,>");
+  }
 }
 
 void declaracion_acciones() :
@@ -168,25 +267,67 @@ void declaracion_acciones() :
 void declaracion_accion() :
 {}
 {
-	cabecera_accion() ";" declaracion_variables() declaracion_acciones() bloque_sentencias()
+  try {
+	cabecera_accion() puntocoma() declaracion_variables() declaracion_acciones() bloque_sentencias()
+  }
+  catch (ParseException e) { // un error a este nivel puede ser solucionado con cualquiera de estas opciones:
+	minilengcompiler.errorSintactico(e, "un tipo de variable (<entero>, <caracter> o <booleano>), <accion> o <principio>");
+  }
+  
+	
 }
 
 void cabecera_accion() :
 {}
 {
-	< ACCION > < IDENTIFICADOR > parametros_formales()
+	accion() identificador() parametros_formales()
 }
+
+void accion() :
+{}
+{
+  try {
+	< ACCION >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<accion>");
+  }
+}
+
 
 void parametros_formales() :
 {}
 {	// Si no hay parametros pueden omitirse los parentesis:
-	("(" (lista_parametros())? ")")?
+	(abrir_par() (lista_parametros())? cerrar_par())?
 }
+
+void abrir_par() :
+{}
+{
+  try {
+	"(" 
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<(>");
+  }
+}
+
+void cerrar_par() :
+{}
+{
+  try {
+	")" 
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<)>");
+  }
+}
+
 
 void lista_parametros() :
 {}
 {	// uno o más
-	parametros() (";" parametros())*
+	parametros() (puntocoma() parametros())*
 }
 
 void parametros() :
@@ -198,32 +339,66 @@ void parametros() :
 
 void clase_parametros() :
 {}
-{
+{	
+  try {
 	< VAL > | < REF >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<val> o <ref>");
+  }
 }
 
 void bloque_sentencias() :
 {}
 {
-	< PRINCIPIO > lista_sentencias() < FIN >
+	 principio() lista_sentencias() fin()
 }
+
+void principio() :
+{}
+{
+  try {
+	< PRINCIPIO >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<principio>");
+  }
+}
+
+void fin() :
+{}
+{
+  try {
+	< FIN >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<fin>");
+  }
+}
+
 
 void lista_sentencias() :
 {}
-{ 	// Puede haber 0 sentencias
-	(sentencia())*
+{ 	// Debe haber al menos una sentencia
+	try { 
+		(sentencia())+
+	}
+	catch (ParseException e) {
+		minilengcompiler.errorSintactico(e, "sentencias. Debe haber al menos una");
+  	}
+	
 }
 
 void sentencia() :
 {}
 { 
-	leer() ";" | escribir() ";" | asignacion_o_invocacion() | seleccion() | mientras_que()
+	leer() puntocoma() | escribir() puntocoma() | asignacion_o_invocacion() | seleccion() | mientras_que()
 }
 
 void leer() :
 {}
 { 
-	< LEER > "(" lista_asignables() ")"
+	< LEER > abrir_par() lista_asignables() cerrar_par()
 }
 
 void lista_asignables() :
@@ -235,19 +410,19 @@ void lista_asignables() :
 void escribir() :
 {}
 { 
-	< ESCRIBIR > "(" lista_escribibles() ")"
+	< ESCRIBIR > abrir_par() lista_escribibles() cerrar_par()
 }
 
 void lista_escribibles() :
 {}
-{ 	// Se puede escribir cualquier expresion, creo (expresion es algo que devuelve un valor y se puede mostrar cualquier valor)
-	escribible() ("," escribible())*
+{ 	
+	escribible() (coma() escribible())*
 }
 
 
 void escribible() :
 {}
-{ 	// Se puede escribir cualquier expresion y una cadena de caracteres
+{ 	// Se puede escribir cualquier expresion o una cadena de caracteres
 	expresion() | < CONSTCAD >
 }
 
@@ -255,7 +430,7 @@ void escribible() :
 void asignacion_o_invocacion() :
 {}
 {	// Para evitar el conflicto sin aumentar el lookahead
-	< IDENTIFICADOR > (asignacion() | invocacion_accion()) ";"
+	identificador() (asignacion() | invocacion_accion()) puntocoma()
 }
 
 
@@ -267,21 +442,55 @@ void asignacion() :
 
 void invocacion_accion() :
 {}
-{ // TODO:
+{
 	(argumentos())?
 }
 
 void mientras_que() :
 {}
-{ // TODO:
-	< MIENTRAS > expresion() lista_sentencias() < FINMIENTRAS >
+{ 
+	< MIENTRAS > expresion() lista_sentencias() fin_mientras()
+}
+
+void fin_mientras():
+{}
+{	
+  try {
+	< FINMIENTRAS >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<fmq>");
+  }
 }
 
 void seleccion() :
 {}
 { 	// si (condicion) ent (sentencias) (si_no)? fsi
-	< SI > expresion() < ENTONCES > lista_sentencias() (si_no())? < FINSI >
+	< SI > expresion() entonces() lista_sentencias() (si_no())? fin_si()
 }
+
+void entonces():
+{}
+{	
+  try {
+	< ENTONCES >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<ent>");
+  }
+}
+
+void fin_si():
+{}
+{	
+  try {
+	< FINSI >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<fsi>");
+  }
+}
+
 
 void si_no() :
 {}
@@ -292,13 +501,13 @@ void si_no() :
 void argumentos() :
 {}
 {
-	"(" (lista_expresiones())? ")"
+	abrir_par() (lista_expresiones())? cerrar_par()
 }
 
 void lista_expresiones() :
 {}
 { 
-	expresion() ("," expresion())*
+	expresion() (coma() expresion())*
 }
 
 void expresion() :
@@ -340,10 +549,16 @@ void operador_multiplicativo() :
 
 void factor() :
 {}
-{ 
-	"-" factor() | < NOT > factor() | "(" expresion() ")"
-	| < ENTACAR > "(" expresion() ")" | < CARAENT > "(" expresion() ")"
-	| < IDENTIFICADOR > | < CONSTENT > | < CONSTCAR > // | < CONSTCAD > // las cadenas solo se pueden usar en la f. escribir (enunciado de la practica 2)
-	| < TRUE > | < FALSE >
+{ 	try { 
+		"-" factor() | < NOT > factor() | abrir_par() expresion() cerrar_par()
+		| < ENTACAR > abrir_par() expresion() cerrar_par() | < CARAENT > abrir_par() expresion() cerrar_par()
+		| identificador() | < CONSTENT > | < CONSTCAR > // | < CONSTCAD > // las cadenas solo se pueden usar en la f. escribir (enunciado de la practica 2)
+		| < TRUE > | < FALSE >
+	}
+	catch (ParseException e) {
+		errorSintactico(e, "una expresión o constante");
+  	}
 }
+
+
 
