@@ -23,15 +23,13 @@ public class MiTokenMgrError extends TokenMgrError {
 	   */
 	// Redefinido para que devuelva comentario de tipo "ERROR LÉXICO (<línea, columna>): símbolo no reconocido: <símbolo>"
 	  protected static String miLexicalError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter, char curChar) {
-	    return("miiiii ERROR LÉXICO (" + errorLine + "," + errorColumn +"): símbolo no reconocido: "+ errorAfter);
+	    return("ERROR LÉXICO (" + errorLine + "," + errorColumn +"): símbolo no reconocido: "+ errorAfter);
 	  }
 
 	public MiTokenMgrError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter,
 			char curChar, int reason) {
-		
-		this(miLexicalError(EOFSeen, lexState, errorLine, errorColumn, errorAfter, curChar), reason);
-		System.out.println("Buenas que tal soy MiTokenMgrError");
-		// TODO Auto-generated constructor stub
+		super(miLexicalError(EOFSeen, lexState, errorLine, errorColumn, errorAfter, curChar), reason);
+		// System.out.println("Nunca llego a esta linea");
 	}
 
 }

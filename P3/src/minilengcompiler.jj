@@ -4,23 +4,19 @@
   //debug_parser = true;
   ignore_case =true;}PARSER_BEGIN(minilengcompiler)
 
-import java.io.FileReader;
-import java.io.BufferedReader;
-import java.util.Scanner;
+import java.io.FileInputStream;
+//import java.io.BufferedReader;
+//import java.util.Scanner;
 
-
+//import MiTokenMgrError;
 
 
 public class minilengcompiler{
-  static int n_ident = 0;  public static void main(String args []) throws ParseException  {	//Scanner s = new Scanner(System.in);
+  static int n_ident = 0;  public static void main(String args []) throws ParseException, MiTokenMgrError  {	//Scanner s = new Scanner(System.in);
 	Boolean verboso = args.length > 1 && args[1] == "-v"; // Es verboso si tenemos dos argumentos y el segundo es "-v"
-	
-
-
-
 	try { // Por si no existe el fichero
-		BufferedReader br = new BufferedReader(new FileReader(args[0]));
-		minilengcompiler parser = new minilengcompiler(br);		//      System.out.print("Escribe el nombre del fichero a analizar : ");
+		FileInputStream fi = new FileInputStream(args[0]);
+		minilengcompiler parser = new minilengcompiler(fi);		//      System.out.print("Escribe el nombre del fichero a analizar : ");
 		
 	  	try
 	      {
@@ -29,19 +25,23 @@ public class minilengcompiler{
 	      }
 	      catch (Exception e)
 	      {
-	        System.out.println("Error sintactico.");
+	        System.out.println("Error sintáctico no clasificado.");
 	        System.out.println(e.getMessage());
 	        minilengcompiler.ReInit(System.in);
 	      }
 	      catch (TokenMgrError e)
-	      {
-	        // "ERROR LÉXICO (<línea, columna>): símbolo no reconocido: <símbolo>"
-	        //System.out.println("ERROR LÉXICO (<línea, columna>): símbolo no reconocido: <símbolo>");
-	        System.out.println(e.getMessage());
-	      }
+	      { // No he conseguido que lance MiTokenMgrError en lugar de TokenMgrError
+			// System.out.println(e.getMessage()); // Esto funcionaria si lanzase MiTokenMgrError
+			
+			// En su lugar, obtenemos los valores de columna, linea y el ultimo token de SimpleCharStream:
+			System.out.println("ERROR LÉXICO (<" + SimpleCharStream.getBeginLine() + ", " + SimpleCharStream.getBeginColumn() +
+					">): símbolo no reconocido: <" + SimpleCharStream.GetImage().charAt(0) + ">"); 
+					// charAt(0) porque siempre es el primer caracter del ultimo token consumido
+		  }
+	       
 	 }
 	 catch (Exception e) {
-		System.out.println("No se ha encontrado el fichero");
+		System.out.println("No se ha encontrado el fichero " + args[1]);
 	 }
 	 // Resumen
 	 if (verboso) { 
@@ -66,7 +66,7 @@ TOKEN : /* Cadenas de car antes de lo demás (pueden tener cualquier cosa dentro)
   // Una cadena entre comillas:
 | < CONSTCAD : (< COMILLAS >) (~["\""])* (< COMILLAS >) > 
 }
-TOKEN : /* OPERATORS */ {  < MAS : "+" >| < MENOS : "-" >| < MULT : "*" >| < DIVIDIR : "/" >
+TOKEN : /* Operadores */ {  < MAS : "+" >| < MENOS : "-" >| < MULT : "*" >| < DIVIDIR : "/" >
 
 | < MOD : "mod" >
 | < DIV : "div" >
@@ -127,11 +127,11 @@ TOKEN : // Reservadas
 | < #ALFANUM: (< LETRA > | < DIGIT >) >
 | < IDENTIFICADOR : ( < LETRA > | ("_")) ( < ALFANUM > | ("_") )* (< ALFANUM >)
 				  | (< LETRA >) >
-// No empieza por num y no acaba por '_': (Letra/barrabaja (Letra/barrabaja/num)* Letra/num) | Letra
+// No empieza por num y no acaba por '_': (Letra/_ (Letra/_/num)* Letra/num) | Letra
 				  {
-				    System.out.println("Reconocido identificador: " + matchedToken);
+				    //System.out.println("Reconocido identificador: " + matchedToken);
 				    minilengcompiler.n_ident++;
-				    }}int programa() :{}{
+				  }}int programa() :{}{
   < PROGRAMA > < IDENTIFICADOR > ";"
   declaracion_variables() declaracion_acciones() bloque_sentencias()
   < EOF > // EOF predefinido, para usar ficheros  {    return 0;  }}
@@ -241,8 +241,16 @@ void escribir() :
 void lista_escribibles() :
 {}
 { 	// Se puede escribir cualquier expresion, creo (expresion es algo que devuelve un valor y se puede mostrar cualquier valor)
-	expresion() ("," expresion())*
+	escribible() ("," escribible())*
 }
+
+
+void escribible() :
+{}
+{ 	// Se puede escribir cualquier expresion y una cadena de caracteres
+	expresion() | < CONSTCAD >
+}
+
 
 void asignacion_o_invocacion() :
 {}
@@ -335,23 +343,7 @@ void factor() :
 { 
 	"-" factor() | < NOT > factor() | "(" expresion() ")"
 	| < ENTACAR > "(" expresion() ")" | < CARAENT > "(" expresion() ")"
-	| < IDENTIFICADOR > | < CONSTENT > | < CONSTCAR > | < CONSTCAD >
+	| < IDENTIFICADOR > | < CONSTENT > | < CONSTCAR > // | < CONSTCAD > // las cadenas solo se pueden usar en la f. escribir (enunciado de la practica 2)
 	| < TRUE > | < FALSE >
 }
 
-
-
-/* de la primera prácticavoid clase() :{}{
-
-	(< CLASE >)(< IDENTIFICADOR >) ("{") (metodo())* ("}")}
-
-void metodo() : { }
-{
-	(< METODO >)(< IDENTIFICADOR >) ("{") (linea())* ("}")
-}
-
-void linea() : { }
-{
-	(< TIPO >) (< IDENTIFICADOR >) (< EQUALS >) ( < VALOR_ENTERO > | < VALOR_DECIMAL > ) (";")
-}
-*/
