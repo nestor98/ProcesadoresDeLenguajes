@@ -1,0 +1,1693 @@
+/**
+ * JavaCC template file created by SF JavaCC plugin 1.5.28+ wizard for JavaCC 1.5.0+
+ */options{  static = true;
+  //debug_parser = true;
+  ignore_case =true;}PARSER_BEGIN(minilengcompiler)
+import java.io.FileInputStream;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+
+import simbolos.Simbolo; // para tipo_variable, etc
+import simbolos.Simbolo.tipo_var;
+
+// Excepciones de simbolos:
+import simbolos.TablaSimbolos;
+import simbolos.SimboloNoEncontradoException;
+import simbolos.SimboloYaDefinidoException;
+import simbolos.SimboloNoInvocableException;
+import simbolos.SimboloNoAsignableException;
+
+// Excepciones semanticas
+import semantico.AccionMalInvocadaException;
+import semantico.AccionNoOperableException;
+import semantico.ParametroInvalidoException;
+import semantico.BoolNoLeibleException;
+import semantico.TipoIncorrectoException;
+import semantico.DesbordamientoException;
+import semantico.DivisionPorCeroException;
+import semantico.CondicionNoBoolException;
+
+
+// Registros de expresiones
+import expresiones.RegistroExpr;
+import expresiones.RegistroExpr.Operador;
+import expresiones.RegistroExpr.OperadorRelacional;
+
+// Vectores:
+// Registros de identificadores
+import vectores.RegistroIdentificador;
+import vectores.DeclaracionVectorException;
+import vectores.IndiceFueraDeRangoException;
+import vectores.IndiceNoEnteroException;
+import vectores.NumeroComponentesException;
+
+// Generador de codigo
+import generacion.Generador;
+
+
+public class minilengcompiler{
+  // ------ Recuento de tokens: ------
+  // Palabras reservadas:
+  // no contamos programa porque siempre tiene que ser 1
+  // Para el resto, diccionario de {nombre(String): cuenta(int)}, los nombres son los siguientes:
+  static Map <String, Integer> cuenta = new HashMap <String, Integer>();
+  static java.util.List<String> nombres = java.util.Arrays.asList("principio", "caracter", "booleano", "entero", "accion",
+  		 "val", "ref", "mq", "si", "si_no", "entacar", "caraent", "leer", "escribir",
+  		 "true", "false", "constent", "constcar", "constcad", "identificadores");
+
+  // Tabla de simbolos:
+  static TablaSimbolos tabla;
+  
+  // Nivel actual (de bloques)
+  static int nivel;
+  
+  // Siguiente etiqueta:
+  // Su valor inicial
+  static int INICIAL = 3;
+  static int [] sig = new int[20]; // maximo de niveles
+
+  // Generador de codigo:
+  static Generador gc;
+
+  // Se pone a false si hay cualquier error (para no generar codigo)
+  static boolean ok = true;
+
+  // Mostrar o no la tabla al cerrar cada bloque
+  static boolean debugTabla = false;
+
+  // True sii una de las strings de args == buscado
+  private static boolean contiene(String args [], String buscado) {
+    boolean contiene = false;
+    for (String arg : args) {
+      if (arg.equals(buscado)) {
+        contiene = true;
+      }
+    }
+    return contiene;
+  }
+    public static void main(String args []) throws ParseException, MiTokenMgrError  {
+    // Inicializamos el diccionario de las cuentas:
+    for (String nombre : nombres) {
+		cuenta.put(nombre, 0); // inicializamos todos a 0
+		//System.out.println(nombre);
+  	}
+  	// Inicializamos la tabla de simbolos:
+  	tabla = new TablaSimbolos();
+  	tabla.inicializar_tabla();
+  	// Argumentos:
+	boolean verboso = args.length > 1 && contiene(args, "-v"); // )&& args[1].equals("-v"); // Es verboso si tenemos dos argumentos y el segundo es "-v"
+	debugTabla = args.length > 1 && contiene(args, "-t"); // resumir la tabla al cerrar cada bloque
+	if (debugTabla) {
+	  System.out.println("Modo de debug de la tabla de simbolos, se resumira al cerrar cada bloque");
+	}
+	boolean noComentarCodigo = args.length > 1 && contiene(args, "-nc"); // no comentar
+	//System.out.println(args[0] + " " + args[1] + " " + verboso + " " + args.length);
+	try { // Por si no existe el fichero
+		FileInputStream fi = new FileInputStream(args[0]);
+		minilengcompiler parser = new minilengcompiler(fi);		//      System.out.print("Escribe el nombre del fichero a analizar : ");
+		try { 
+			parser.programa(args[0], noComentarCodigo);
+		}
+		catch (TokenMgrError e)
+		{ // No he conseguido que lance MiTokenMgrError en lugar de TokenMgrError
+			// System.out.println(e.getMessage()); // Esto funcionaria si lanzase MiTokenMgrError
+			
+			// En su lugar, obtenemos los valores de columna, linea y el ultimo token de SimpleCharStream:
+			System.out.println("ERROR LÉXICO (<" + SimpleCharStream.getBeginLine() + ", " + SimpleCharStream.getBeginColumn() +
+				">): símbolo no reconocido: <" + SimpleCharStream.GetImage().charAt(0) + ">"); 
+				// charAt(0) porque siempre es el primer caracter del ultimo token consumido
+		}
+	 }
+	 catch (java.io.FileNotFoundException e) {
+		System.out.println("No se ha encontrado el fichero " + args[0]);
+		System.out.println(e);
+	 }
+	 // Resumen
+	 if (verboso) {
+	   resumenTokens();
+		 //System.out.println(resumenTokens());
+	  }	  	}
+
+
+	// Escribe en salida estandar una tabla con dos columnas:
+	// los nombres de los tokenes y la cuenta de sus apariciones
+	// en el fichero de entrada.
+	public static void resumenTokens() {
+	  	System.out.println("------- Modo verboso - Recuento de Tokens: -------");
+  		System.out.format("%20s%10s%n", "TOKEN", "NUMERO");
+	  	for (Map.Entry<String, Integer> entry : cuenta.entrySet()) {
+	  		System.out.format("%20s%10d%n", entry.getKey(), entry.getValue());
+		}
+	  	//System.out.format("%32s%10d%16s", string1, int1, string2);
+		//return "Número de identificadores: " + n_ident;
+
+	}
+
+
+	// Muestra por pantalla un error sintáctico. Especifica línea y columna, el símbolo que ha obtenido y el que esperaba:
+	private static void errorSintactico(ParseException e, String esperaba) {
+        Token ultimo = minilengcompiler.getNextToken(); // el del error es el siguiente, ya que no ha hecho match todavía
+        if (!esperaba.isEmpty()) { // si <esperaba> no está vacía, la completamos para la string final:
+			esperaba = ". Esperaba " + esperaba;
+        }
+        else {
+			esperaba = ". Error desconocido"; 
+			// Aquí se puede personalizar un mensaje para los errores sintácticos inesperados (no debería darse nunca)
+        }
+	    System.out.println("ERROR SINTÁCTICO (<" + ultimo.beginLine + ", " + ultimo.beginColumn +
+	    	">): Símbolo obtenido: <" + ultimo.image + ">" + esperaba + ".");
+	    ok = false; // No se genera codigo
+    }
+
+    // Muestra por pantalla un error semantico. Especifica línea y columna y resume el problema:
+	private static void errorSemantico(Exception e, Token t) {
+	    System.out.println("ERROR SEMANTICO (<" + t.beginLine + ", " + t.beginColumn +
+	    	">): " + e.toString());
+	    ok = false; // No se genera codigo
+    }
+
+	// Modo de pánico, ignora la entrada hasta encontrar un token de tipo <tipoSeguro> o el EOF.
+	// Implementación basada en la documentación de JavaCC: https://javacc.github.io/javacc/tutorials/error-handling.html
+	// (el parámetro tipoSeguro puede ser el identificador de un token del léxico, por ej PUNTOCOMA, ya que es un entero)
+    private static void panicMode(ParseException e, int tipoSeguro) {
+		  Token t;
+		  errorSintactico(e, "<;> (PANIC MODE)"); // mostramos el origen del error
+		  do {
+		    t = getNextToken();
+		  }
+		  while (t.kind != tipoSeguro && t.kind != EOF); // e ignoramos la entrada hasta el siguiente token seguro
+	    	}
+	
+	// Suma uno al valor del token con <clave>
+	public static void contarToken(String clave) {
+	  	//System.out.println(clave);
+	  	cuenta.put(clave, cuenta.get(clave)+1);
+	}}PARSER_END(minilengcompiler)// < * > para que se aplique a todos los lexical states< * > SKIP :{  " "| "\r"| "\t"| "\n"
+| < ("%%") (~["%"] | "%"(~["%"]))* ("%%") > // Comentario multilineas, entre %% y %%
+| < ("%") (~["\n"])* ("\n") > // Comentario de una linea, empieza por % y acaba con el salto de linea}
+
+
+TOKEN : /* Cadenas de car antes de lo demás (pueden tener cualquier cosa dentro) */ 
+{
+  < #COMILLAS : "\"" >
+  // Un caracter entre comillas:
+| < CONSTCAR : < COMILLAS > ~["\""] < COMILLAS > > 
+	  {
+		minilengcompiler.contarToken("constcar");
+	  }
+  // Una cadena entre comillas:
+| < CONSTCAD : (< COMILLAS >) (~["\""])* (< COMILLAS >) > 
+	  {
+		minilengcompiler.contarToken("constcad");
+	  }
+}
+TOKEN : /* Operadores */ {  < MAS : "+" >| < MENOS : "-" >| < MULT : "*" >| < DIVIDIR : "/" >
+
+| < MOD : "mod" >
+| < DIV : "div" >
+
+| < AND : "and" >
+| < OR : "or" >
+| < NOT : "not" >
+
+| < IGUAL : "=" >
+| < MENIGUAL : "<=" >
+| < MAYIGUAL : ">=" >
+| < MENOR : "<" >
+| < MAYOR : ">" >
+| < DISTINTO : "<>" >
+
+| < ABRIRPAR : "(" >
+| < CERRARPAR : ")" >
+
+| < ABRIRCOR : "[" > // Vectores
+| < CERRARCOR : "]" >
+
+| < ASIGNAR : ":=" >
+| < PUNTOCOMA : ";" >
+| < COMA : "," >}
+
+TOKEN : // Reservadas
+{
+  < PROGRAMA : "programa" >
+| < PRINCIPIO : "principio" >
+	  {
+		minilengcompiler.contarToken("principio");
+	  }
+| < FIN : "fin" >
+| < CAR : "caracter" >
+	  {
+		minilengcompiler.contarToken("caracter");
+	  }
+| < BOOL : "booleano" >
+	  {
+		minilengcompiler.contarToken("booleano");
+	  }
+| < ENT : "entero" >
+	  {
+		minilengcompiler.contarToken("entero");
+	  }
+| < ACCION : "accion" >
+	  {
+		minilengcompiler.contarToken("accion");
+	  }
+| < VAL : "val" >
+	  {
+		minilengcompiler.contarToken("val");
+	  }
+| < REF: "ref" >
+	  {
+		minilengcompiler.contarToken("ref");
+	  }
+
+| < MIENTRAS: "mq" >
+	  {
+		minilengcompiler.contarToken("mq");
+	  }
+| < FINMIENTRAS: "FMq" >
+| < SI : "si" >
+	  {
+		minilengcompiler.contarToken("si");
+	  }
+| < SINO : "si_no" >
+	  {
+		minilengcompiler.contarToken("si_no");
+	  }
+| < FINSI : "Fsi" >
+| < ENTONCES: "ent" >
+
+| < ENTACAR : "entacar" >
+	  {
+		minilengcompiler.contarToken("entacar");
+	  }
+| < CARAENT : "caraent" >
+	  {
+		minilengcompiler.contarToken("caraent");
+	  }
+
+| < LEER : "leer" >
+	  {
+		minilengcompiler.contarToken("leer");
+	  }
+| < ESCRIBIR : "escribir" >
+	  {
+		minilengcompiler.contarToken("escribir");
+	  }
+
+//| < CLASE : "Clase" >
+//| < METODO : "Metodo" >
+//| < TIPO : ("entero")|("decimal") >
+}
+
+TOKEN : // Valores{
+ < TRUE : "true" >
+	  {
+		minilengcompiler.contarToken("true");
+	  }
+| < FALSE : "false" >
+	  {
+		minilengcompiler.contarToken("false");
+	  }| < CONSTENT : (< DIGIT >)+ >
+	  {
+		minilengcompiler.contarToken("constent");
+	  }| < #DIGIT : [ "0"-"9" ] >
+| < #LETRA : ["a"-"z"] >
+| < #ALFANUM: (< LETRA > | < DIGIT >) >
+| < IDENTIFICADOR : ( < LETRA > | ("_")) ( < ALFANUM > | ("_") )* (< ALFANUM >)
+				  | (< LETRA >) >
+// No empieza por num y no acaba por '_': (Letra/_ (Letra/_/num)* Letra/num) | Letra
+	  {
+		minilengcompiler.contarToken("identificadores");
+	  }}
+
+/************************************************************/
+/* Gramática:												*/
+/************************************************************/
+int programa(String f_in, boolean noComentarCodigo) :{ // Declaracion de variables:
+	RegistroIdentificador id; // token identificador
+	nivel = 0; // el nivel empieza en 0
+	sig[nivel] = INICIAL;
+
+	// para almacenar el codigo:
+	String cacciones;
+	String cbloqueinstr;
+}{
+  try {
+      directiva_programa()
+      id = identificador(true) {
+        if (id != null) { 
+	        // Inicializacion de la generacion de codigo:
+	        gc = new Generador(f_in, noComentarCodigo); 
+	        // Se introduce el simbolo programa:
+			tabla.introducir_programa(id.getId(), sig[nivel]); // image contiene la string en si (nombre)
+			// (dir en este caso no se usa)
+	    }
+      }
+      puntocoma() declaracion_variables()
+      cacciones = declaracion_acciones()
+      cbloqueinstr = bloque_sentencias()
+      {
+        // Generacion de codigo:
+        if (ok && id != null) { // Solo si no ha habido errores de ningun tipo
+          gc.generarPrograma(id.getId(), cacciones, cbloqueinstr);
+        }
+      }
+	  < EOF > // EOF predefinido, para usar ficheros
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "");
+  }  {
+    nivel = 0;    return 0;  }}
+
+
+// Separamos todos los terminales en funciones aparte para permitir mayor detalle en los errores:
+void directiva_programa() :
+{}
+{
+  try {
+      < PROGRAMA >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<programa>");
+  }
+}
+
+// indice de un vector
+// Sintaxis: < ABRIRCOR > (< CONSTENT > | identificador()) < CERRARCOR >
+// Si es una declaracion, solo se permiten constantes enteras
+RegistroIdentificador indice(Token idVector, boolean declaracion) :
+{
+  Token t;
+  RegistroExpr exp;
+  RegistroIdentificador v = null; // Vector
+}
+{
+  try { 
+	  < ABRIRCOR > (t = < CONSTENT > {
+		int indice = Integer.parseInt(t.image);
+		if (declaracion) {
+		  v = new RegistroIdentificador(idVector.image, indice);
+		}
+		else { // invocacion
+		  // Comprobar rango correcto:
+		  try {
+		    Simbolo vec = tabla.buscar_simbolo(idVector.image);
+		    try { 
+		      vec.comprobarRango(indice);
+		      RegistroExpr expIdx = new RegistroExpr(indice);
+	 		  expIdx.setCodigo(gc.constEnt(indice));
+	      	  v = new RegistroIdentificador(idVector.image, true);
+	 		  v.setExprIndice(expIdx);
+		    }
+		    catch (IndiceFueraDeRangoException e) {
+		      errorSemantico(e, t);
+		    }
+		  }
+		  catch (SimboloNoEncontradoException e) {
+		    errorSemantico(e, idVector);
+		  }
+		} 
+		
+	  }
+	  | exp = expresion(){
+	    if (declaracion) { // Solo se pueden declarar vectores con constantes enteras
+	      errorSemantico(new DeclaracionVectorException(), token);
+	    }
+	    else if (!exp.esEnt()) { // Si no es entero, error
+	      errorSemantico(new IndiceNoEnteroException(exp), token);
+	    }
+	    else { // invocacion
+	      if (!exp.esSimbolo()) { // si es un valor constante, comprobamos rangostry {
+			try { 
+			    Simbolo vec = tabla.buscar_simbolo(idVector.image);
+		        try {
+		          indice = exp.getValorEnt();
+			      vec.comprobarRango(indice);
+			      RegistroExpr expIdx = new RegistroExpr(indice);
+		 		  expIdx.setCodigo(gc.constEnt(indice));
+		      	  v = new RegistroIdentificador(idVector.image, true);
+		 		  v.setExprIndice(expIdx);
+			    }
+			    catch (IndiceFueraDeRangoException e) {
+			      errorSemantico(e, token);
+			    }
+			}
+			catch (SimboloNoEncontradoException e) {
+			    errorSemantico(e, idVector);
+			}
+	      }  
+	      v = new RegistroIdentificador(idVector.image, true);
+	      v.setExprIndice(exp);
+	    }
+	  }) < CERRARCOR >
+	}
+	catch (ParseException e) {
+	  errorSintactico(e, "una constante entera o expresion");
+	}
+  {
+    return v;
+  }
+}
+
+
+
+// Devuelve el Registro del identificador, comprueba que no haya errores sintacticos
+// o semanticos. El registro contiene la informacion relativa al identificador
+// teniendo en cuenta que ahora puede ser un vector
+// Si hay error, ademas, devuelve null
+RegistroIdentificador identificador(boolean declaracion) :
+{
+  Token t = null;
+  RegistroIdentificador rid = null;
+  boolean esVector = false;
+}
+{
+  try {
+      t = < IDENTIFICADOR > (rid = indice(t, declaracion) {
+        esVector = true;
+      })?
+      {
+        if (!esVector) { // Solo si no es vector
+          // Se crea el registro de variable
+          rid = new RegistroIdentificador(t.image, 0);
+        }
+      }
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "un identificador");
+  }
+  {
+    return rid;
+  }
+}
+
+
+void puntocoma() :
+{}
+{
+  try {
+      ";"
+  }
+  catch (ParseException e) {
+	//errorSintactico(e, "<;>");
+	panicMode(e, PUNTOCOMA); // ignora hasta el siguiente ";" o EOF
+  }
+}
+
+
+// Sintaxis: (declaracion() puntocoma())*
+void declaracion_variables() :
+{
+}
+{ 
+  (declaracion() puntocoma())*
+}
+
+
+void declaracion() :
+{ 
+	List<RegistroIdentificador> ids = null; // identificadores
+	Simbolo.tipo_var tipo; // tipo
+	String codigo = "";
+}
+{
+	  tipo = tipo_variables()
+	  ids = identificadores(true)
+	  {
+	    
+		for (RegistroIdentificador id : ids) { // introducimos cada identificador, todos comparten el tipo
+			try {
+			  if (id != null) { // Si no ha habido errores anteriores
+				  //System.out.println(id);
+				  int size = 1; // Cada variable ocupa 1 (todos los tipos)
+				  if (id.esVector()) { // Si es un vector, el numero de componentes
+				    size = size * id.getComponentes();
+				  }
+				  tabla.introducir_variable(id, tipo, nivel, sig[nivel]);
+				  sig[nivel] += size; // Aumentamos la siguiente direccion
+			  } 
+			}
+			catch (SimboloYaDefinidoException e) { 
+			  errorSemantico(e, token);
+			  //System.out.println("<" + id.beginLine + ", " + id.beginColumn +	"> " + e);
+			}
+		}
+	  }
+}
+
+// Devuelve el tipo de la variable. Comprueba que no haya un error sintactico
+Simbolo.tipo_var tipo_variables() :
+{
+  Simbolo.tipo_var tipo = Simbolo.tipo_var.DESCONOCIDO; // por defecto, desconocido
+}
+{
+  try {
+	(
+	  < ENT > {
+		tipo = tipo_var.ENTERO;
+	  }
+	  | < CAR > {
+		tipo = tipo_var.CHAR;
+	  }
+	  | < BOOL > {
+		tipo = tipo_var.BOOLEANO;
+	  }
+	)
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "un tipo de variable (<entero>, <caracter> o <booleano>)");
+  }
+  {
+    return tipo; // devolvemos el tipo
+  }
+}
+
+// Devuelve la lista de tokens identificadores
+List<RegistroIdentificador> identificadores(boolean declaracion) :
+{
+  RegistroIdentificador id;
+  List<RegistroIdentificador> lista = new ArrayList<RegistroIdentificador>(); // lista de identificadores 
+}
+{	// identificador() (coma() identificador())*
+	id = identificador(declaracion) {
+		lista.add(id); // añadimos el primero a la lista
+	}
+	(
+	  coma()
+	  id = identificador(declaracion) {
+		lista.add(id); // y el resto 
+	  }
+	)*
+	{
+		return lista;
+	}
+}
+
+void coma() :
+{}
+{
+  try {
+	","
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<,>");
+  }
+}
+
+// Devuelve la string con el codigo de las acciones
+String declaracion_acciones() :
+{
+  String caccion; // Para cada accion
+  String cacciones = ""; // con todas
+}
+{
+  (caccion = declaracion_accion() {
+	 cacciones += caccion;
+  })*
+  {
+    return cacciones;
+  }
+}
+	
+
+// cabecera_accion() puntocoma() declaracion_variables() declaracion_acciones() bloque_sentencias()
+String declaracion_accion() :
+{
+  // Codigos de la accion, de las acciones anidadas, de los params, variables y sentencias:
+  String caccion = "";
+  String cAcciones, cParams, cSents;
+  Simbolo accion;
+}
+{ 
+  try {
+	accion = cabecera_accion()
+	puntocoma() declaracion_variables() cAcciones = declaracion_acciones()
+	cSents = bloque_sentencias()
+	{
+	  if (accion != null) {
+      	cParams = "";
+      	List<Simbolo> params = accion.getLista_parametros(); // lista de parametros
+		// Generacion del codigo de los parametros (orden inverso porque han sido apilados en orden):
+	    for (int i = params.size()-1; i >= 0; i--) { 
+	      // Como variables pero con ASGI
+	      Simbolo param = params.get(i);
+	      cParams += gc.parametro(param.getNombre(), 0, param.getDir());
+	      cParams += gc.asignacionInv(); 
+	    }
+		// Generacion de codigo:
+		caccion = gc.declaracionAccion(accion.getNombre(), accion.getEtiqueta(), cAcciones, cParams, cSents);
+	  }
+	}
+  }
+  catch (ParseException e) { // un error a este nivel puede ser solucionado con cualquiera de estas opciones:
+	minilengcompiler.errorSintactico(e, "un tipo de variable (<entero>, <caracter> o <booleano>), <accion> o <principio>");
+  }
+  {
+	return caccion; 
+  }
+}
+
+
+// Sintaxis: accion() identificador() parametros_formales()
+// Devuelve el simbolo de la accion generado
+// Introduce la accion definida por esta cabecera (junto con su lista de parametros)
+Simbolo cabecera_accion() :
+{
+  RegistroIdentificador id = null;
+  List<Simbolo> parametros = new ArrayList<Simbolo>();
+  Simbolo accion = null;
+  sig[++nivel] = INICIAL; // Se aumenta el nivel (para la propia accion la declaramos en el nivel-1) 
+}
+{	
+	accion()
+	id = identificador(true)
+	parametros = parametros_formales()
+	{
+	  if (id!=null) { 
+		  try {
+		    // El nivel se incrementa despues de introducir la accion, antes de los params
+		    // Generacion de codigo: generamos la etiqueta con la accion
+		    accion = tabla.introducir_accion(id.getId(), parametros, gc.nuevaEtiq(), nivel-1, sig[nivel-1]);
+			// La direccion no importa en este caso, no se apila
+		  }
+		  catch (SimboloYaDefinidoException e) {
+		    errorSemantico(e, token);
+		  }
+		  return accion;
+	  }
+	}	  
+}
+
+void accion() :
+{}
+{
+  try {
+	< ACCION >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<accion>");
+  }
+}
+
+
+List<Simbolo> parametros_formales() :
+{
+  // Lista de parametros:
+  List<Simbolo> parametros = new ArrayList<Simbolo>();
+}
+{	// (abrir_par() (+())? cerrar_par())?
+	// Si no hay parametros pueden omitirse los parentesis
+	(abrir_par()
+	(
+	  parametros = lista_parametros()
+	)? cerrar_par())?
+	{
+	  return parametros;
+	}
+}
+
+void abrir_par() :
+{}
+{
+  try {
+	"(" 
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<(>");
+  }
+}
+
+// Devuelve el token para manejo de errores
+Token cerrar_par() :
+{
+  Token t = null;
+}
+{
+  try {
+	t = ")" 
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<)>");
+  }
+  {
+    return t;
+  }
+}
+
+// Devuelve la lista de todos los simbolos parametros de la accion
+List<Simbolo> lista_parametros() :
+{
+  List<Simbolo> aux = new ArrayList<Simbolo>(); // lista auxiliar
+  List<Simbolo> pars = new ArrayList<Simbolo>(); // Lista de parametros a devolver
+}
+{	// parametros() (puntocoma() parametros())*
+	// debe haber uno o más
+	aux = parametros() {
+	  pars.addAll(aux);
+	}
+	(puntocoma()
+	aux = parametros() {
+	  pars.addAll(aux);
+	}
+	)*
+	{
+	  return pars; // devolvemos la lista completa de los parametros
+	}
+}
+
+// Introduce en la tabla los parametros de la clase y tipo correspondiente
+// devuelve una lista con los simbolos
+List<Simbolo> parametros() :
+{
+  List<RegistroIdentificador> ids = null; // identificadores
+  Simbolo.tipo_var tipo = Simbolo.tipo_var.DESCONOCIDO; // Tipo de dato 
+  Simbolo.clase_parametro clase; // Clase de los parametros
+  List<Simbolo> parametros = new ArrayList<Simbolo>(); // lista una vez construidos
+}
+{   // Original : clase_parametros() tipo_variables() lista_parametros()
+	clase = clase_parametros()
+	tipo = tipo_variables()
+	ids = identificadores(true)
+	{
+	    for (RegistroIdentificador id : ids) {
+	      if (id != null) { // si no ha habido errores anteriores
+		      try {
+		        if (!id.esVector()) { // Si no es vector, se introduce
+			        Simbolo par = tabla.introducir_parametro(id.getId(), tipo, clase, nivel, sig[nivel]++);
+				    parametros.add(par);
+				}
+				else { // Los vectores no pueden ser parametros
+					errorSemantico(new ParametroInvalidoException("No se permiten parametros de tipo vector"), token);
+		        }
+			  }
+			  catch (SimboloYaDefinidoException e) {
+				errorSemantico(e, token);
+				//System.out.println("<" + id.beginLine + ", " + id.beginColumn +	"> " + e);
+			  }
+		  }
+	    }
+	  return parametros;
+	}
+}
+
+
+Simbolo.clase_parametro clase_parametros() :
+{ // por defecto val, aunque sintacticamente se debe especificar
+  Simbolo.clase_parametro clase = Simbolo.clase_parametro.VAL; 
+}
+{ // < VAL > | < REF >
+  try {
+	< VAL > {
+	  clase = Simbolo.clase_parametro.VAL;
+	}
+	| < REF > {
+	  clase = Simbolo.clase_parametro.REF;
+	}
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<val> o <ref>");
+  }
+  {
+	return clase;
+  }
+}
+
+
+// principio() lista_sentencias() fin()
+String bloque_sentencias() :
+{
+  String cod = ""; // Codigo generado
+}
+{
+  (    principio() cod = lista_sentencias() fin()
+  )
+  {
+    return cod;
+  }
+}
+
+void principio() :
+{}
+{
+  try {
+	< PRINCIPIO >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<principio>");
+  }
+}
+
+void fin() :
+{}
+{
+  try {
+	< FIN >
+  }
+  catch (ParseException e) {
+	minilengcompiler.errorSintactico(e, "<fin>");
+  }
+  {
+    if (debugTabla) { 
+	    System.out.println("Estoy en FIN, resumen de la tabla:");
+		tabla.mostrar();
+		System.out.println();
+    }
+
+	
+	// Eliminacion de variables de la tabla:
+    //System.out.println("antes de eliminar: " + tabla.n_simbolos());
+    tabla.eliminar_variables(nivel);
+    tabla.eliminar_acciones(nivel);
+    // Se eliminan los del siguiente nivel, el actual se debe mantener para invocaciones
+    tabla.eliminar_parametros_ocultos(nivel+1); 
+    tabla.ocultar_parametros(nivel);  
+	
+	//System.out.println(token.beginLine + "................." + nivel);
+	
+    //System.out.println("Despues: " + tabla.n_simbolos());
+	nivel--; // Al salir, se reduce de nuevo el nivel
+	//System.out.println("................." + nivel);
+  }
+}
+
+
+// Devuelve el codigo correspondiente como string
+// Sintaxis: (sentencia())+
+String lista_sentencias() :
+{
+  String codigo = "";
+  String aux;
+}
+{ 	// (sentencia())+
+	// Debe haber al menos una sentencia
+	try { 
+		(
+		  aux = sentencia() {
+		    codigo += aux;
+		  }
+		)+
+	}
+	catch (ParseException e) {
+		minilengcompiler.errorSintactico(e, "sentencias. Debe haber al menos una");
+  	}
+  	{
+  	  return codigo;
+  	}
+}
+
+// Devuelve el codigo correspondiente como string
+// Sintaxis:
+// leer() puntocoma() | escribir() puntocoma() | asignacion_o_invocacion() | seleccion() | mientras_que()
+String sentencia() :
+{
+  String codigo = "";
+}
+{
+  (    codigo = leer() puntocoma()
+    | codigo = escribir() puntocoma()
+    | codigo = asignacion_o_invocacion()
+    | codigo = seleccion()
+    | codigo = mientras_que()
+  )
+  {
+    return codigo;
+  }
+}
+
+// funcion predefinida leer. Se comprueba que no se use como argumento un
+// parametro pasado por valor
+// Sintaxis:
+// < LEER > abrir_par() lista_asignables() cerrar_par()
+String leer() :
+{
+  String codigo; 
+  List<Simbolo> simbolos;
+}
+{ 
+  < LEER > abrir_par() codigo = lista_asignables() cerrar_par()
+  {
+    return codigo;
+  }
+}
+
+// Los parametros por valor y las acciones no son asignables
+// Tampoco se pueden leer booleanos
+// El codigo de leer se genera aqui, y se devuelve:
+String lista_asignables() :
+{
+  List<RegistroIdentificador> ids; // lista de identificadores
+  Simbolo s = null; // simbolo
+  String codigo = "";
+  String aux; // Para el codigo de los parametros
+}
+{ 	// identificadores()
+	// Debe recibir al menos uno, como identificadores
+	ids = identificadores(false) {
+	  for (RegistroIdentificador id : ids) { // Comprobamos cada identificador
+	  	if (id != null) { 
+		    try {
+		      s = tabla.buscar_simbolo(id.getId()); // buscamos el simbolo
+		      if (s.es_valor() || s.es_accion()) { 
+				// Si es parametro por valor o una accion, error semantico
+		        errorSemantico(new SimboloNoAsignableException(s), token);
+		      }
+		      else if (s.es_booleano()) { // no se pueden leer bool
+		        errorSemantico(new BoolNoLeibleException(s), token);
+		      }
+		      else { // Correcto, se genera el codigo
+		        aux = gc.parametro(s.getNombre(), nivel-s.getNivel(), s.getDir()); // de la variable
+		        if (s.es_referencia()) {
+		          aux += "DRF\n";
+		        }
+		        codigo += gc.leer(aux, s.es_entero()); // de leer
+		      }
+		        
+		    }
+		    catch (SimboloNoEncontradoException e) { // Si no se encuentra
+		      errorSemantico(e, token);
+		    }
+		 }
+	  }
+	  return codigo;
+	}
+}
+
+
+// < ESCRIBIR > abrir_par() lista_escribibles() cerrar_par()
+String escribir() :
+{
+  String codigo; // Codigo de los escribibles
+}
+{
+  < ESCRIBIR > abrir_par() codigo = lista_escribibles() cerrar_par()
+  {
+    return codigo;
+  }
+}
+
+// Devuelve la string con el codigo completo de la f. escribir
+// Sintaxis: escribible() (coma() escribible())*
+String lista_escribibles() :
+{
+  String aux;
+  String codigo;
+}
+{
+  codigo = escribible() 
+  (
+    coma() aux = escribible() {
+      codigo += aux;
+    }
+  )*
+  {
+    return codigo;
+  }
+}
+
+// Se puede escribir cualquier expresion o una cadena de caracteres
+// El codigo de escribir se genera aqui
+// Sintaxis: expresion | cadena
+String escribible() :
+{
+  String codigo ="";
+  RegistroExpr exp;
+  Token cadena;
+}
+{
+  (    exp = expresion() {
+      if (exp != null && !exp.esDesconocido()) {
+	      if (!exp.esVector()) { 
+		    codigo = exp.getCodigo(); // Codigo de la exp
+		    codigo = gc.escribir(codigo, !exp.esChar()); // Si no es char, lo escribimos como entero (aunque sea bool)
+	  	  } 
+		  else { // Es vector
+		  	Simbolo v = exp.getSimbolo();
+		  	String aux, idx; // codigos intermedios
+		  	// Se escriben sus componentes separados por comas
+		  	codigo = gc.comentar("Escribir vector " + v.getNombre());
+		    for (int i = 0; i<v.getComponentes(); i++) { // Cada componente
+		      idx = gc.sumar((int) v.getDir(), gc.constEnt(i)); // indice
+		      aux = gc.valVector(v.getNombre(), nivel-v.getNivel(), idx); // valor
+		      aux = gc.escribir(aux, !v.es_char());
+		      if (i<v.getComponentes()-1) { // Evitamos la coma al final
+		        aux += gc.escribirCadena("\",\"");
+		      }
+		      codigo += aux;
+		    }
+		  }
+	  }
+	
+    }
+    | cadena = < CONSTCAD > {
+      codigo = gc.escribirCadena(cadena.image);
+    }
+  )
+  {
+    return codigo;
+  }
+}
+
+// Sintaxis: 
+// identificador() (asignacion() | invocacion_accion()) puntocoma()
+// Devuelve el codigo como String
+String asignacion_o_invocacion() :
+{
+  RegistroIdentificador id = null; // token del identificador
+  Simbolo s = null; // Simbolo
+  String codigo;
+}
+{
+  // Para evitar el conflicto sin aumentar el lookahead
+  id = identificador(false) 
+  (
+    codigo = asignacion(id) 
+    | codigo = invocacion_accion(id) 
+  )
+  puntocoma()
+  {
+    return codigo;
+  }
+}
+
+// Se asigna la expresion al simbolo s. Se comprueba que s sea asignable
+// (que no sea un parametro por valor o una accion)
+// Devuelve como string el codigo de la asignacion
+String asignacion(RegistroIdentificador id) :
+{
+  Simbolo s = null;
+  if (id!=null) { 
+	  try {
+	    s = tabla.buscar_simbolo(id.getId()); // Buscamos el simbolo
+	  }
+	  catch (SimboloNoEncontradoException e) { // si no existe, error semantico
+	    errorSemantico(e, token);
+	  }
+  }
+  boolean generar = false;
+  RegistroExpr exp;
+  String codigo = "";
+  if (s != null) {
+    if (s.es_valor() || s.es_accion()) { 
+	  // No se pueden asignar parametros pasados por valor o acciones
+      errorSemantico(new SimboloNoAsignableException(s), token);
+    }
+    else { // Generacion
+      generar = true;
+    }
+  }
+}
+{
+  < ASIGNAR > exp = expresion() {
+    if (s!=null && exp != null && !exp.esDesconocido() ) { 
+	    if (exp.getTipo() != s.getVariable()) { // Concordancia de tipos
+	      errorSemantico(new TipoIncorrectoException("Los tipos de la asignacion deben concordar"), token);
+	    }
+	    else if (generar) { // Si no ha habido ningun error, generamos:
+		    if (!s.esVector()) { // Si no es vector:
+				if (exp.esVector()) {
+				  errorSemantico(new TipoIncorrectoException("No se puede asignar un vector a una variable"), token);
+				}
+		    	else { 
+			      codigo = gc.parametro(s.getNombre(), nivel-s.getNivel(), s.getDir());
+			      if (s.es_referencia()) { // por referencia, DRF extra
+			      	codigo += "DRF\n";
+			      }
+			      codigo = gc.asignacion(codigo, exp.getCodigo());
+			    }
+		    }
+		    else { // Es vector:
+		      // puede ser una componente o el vector entero
+		      if (id.esVector()) { // Si el identificador es un vector (tiene corchetes):
+		        // Es una componente:
+			      // indice:
+			      String idx = gc.sumar((int) s.getDir(), id.getExprIndice().getCodigo());
+			      // Direccion:
+			      codigo = gc.refVector(s.getNombre(), nivel-s.getNivel(), idx);
+			      // Asignacion
+			      codigo = gc.asignacion(codigo, exp.getCodigo());
+			  }
+			  else { // Vector completo (sin corchetes)
+			    if (!exp.esVector()) { // Si el del lado derecho no es un vector
+			      errorSemantico(new TipoIncorrectoException("No se puede asignar una variable a un vector"), token);
+			    }
+			    else {
+			      Simbolo otroVec = exp.getSimbolo(); // el otro vector
+			      if (otroVec.getComponentes() != s.getComponentes()) {
+			        // De distinto tamaño
+			        errorSemantico(new NumeroComponentesException(s, otroVec), token);
+			      }
+			      else { // mismo tamaño
+			        codigo = gc.asignarVect(s.getNombre(), s.getNivel()-nivel, otroVec.getNivel()-nivel, (int) s.getDir(), (int) otroVec.getDir(), s.getComponentes());
+			      }
+			    }
+			  }
+			    
+		  	}
+	 	}
+	}	
+    return codigo;
+  }
+}
+
+// Se invoca <accion>, comprobando que sea una accion
+// Sintaxis: (argumentos(accion))?
+// Devuelve el codigo resultante
+String invocacion_accion(RegistroIdentificador id) :
+{
+  Simbolo accion = null;
+  if (id != null) { 
+	  try {
+	    //System.out.println("'" + id.image + "'");
+	    accion = tabla.buscar_accion(id.getId()); // Buscamos el simbolo
+	  }
+	  catch (SimboloNoEncontradoException e) { // si no existe, error semantico
+	    errorSemantico(e, token);
+	  }
+  }
+  String codigo = "";
+  String cArgumentos = ""; // Codigo de los argumentos
+}
+{
+  (cArgumentos = argumentos(accion))?
+  {
+    if (accion != null) {
+      if (!accion.es_accion()) { // Solo se pueden invocar acciones
+        errorSemantico(new SimboloNoInvocableException(accion), token);
+      }
+      else { // ok, generacion:
+      	// Tamaño del bloque: direccion actual-1
+        codigo = gc.invocacion(accion.getNombre(), cArgumentos, sig[nivel], nivel-accion.getNivel(), accion.getEtiqueta());
+      }
+    }    
+    
+    return codigo;
+  }
+}
+
+
+// Devuelve la string con el codigo correspondiente
+// Sintaxis:
+// < MIENTRAS > exp = expresion() lista_sentencias() fin_mientras()
+String mientras_que() :
+{
+  RegistroExpr exp;
+  String codSentencias;
+}
+{ 
+	< MIENTRAS > exp = expresion() {
+	  if (exp != null && !exp.esBool() && exp.getTipo()!=tipo_var.DESCONOCIDO) { // comprobamos que sea bool
+	    errorSemantico(new CondicionNoBoolException("mq"), token);
+	  }
+	}
+	codSentencias = lista_sentencias() fin_mientras()
+	{
+	  // Devolvemos la string con el codigo
+	  return gc.mientrasQue(exp.getCodigo(), codSentencias);
+	}
+}
+
+void fin_mientras():
+{}
+{	
+  try {
+	< FINMIENTRAS >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<fmq>");
+  }
+}
+
+
+// Devuelve como String el codigo correspondiente
+// Sintaxis:
+// si (condicion) ent (sentencias) (si_no)? fsi
+String seleccion() :
+{
+  RegistroExpr exp;
+  String codSentencias;
+  String codSino = "";
+}
+{ 	
+	< SI > exp = expresion() {
+	  if (exp != null && !exp.esBool() && exp.getTipo()!=tipo_var.DESCONOCIDO) { // comprobamos que sea bool
+	    errorSemantico(new CondicionNoBoolException("si"), token);
+	  }
+	}
+	entonces() codSentencias = lista_sentencias() (codSino = si_no())? fin_si()
+	{ // Devolvemos el codigo
+	  return gc.seleccion(exp.getCodigo(), codSentencias, codSino);
+	}
+}
+
+void entonces():
+{}
+{	
+  try {
+	< ENTONCES >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<ent>");
+  }
+}
+
+void fin_si():
+{}
+{	
+  try {
+	< FINSI >
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "<fsi>");
+  }
+}
+
+
+// Devuelve el codigo correspondiente como String
+String si_no() :
+{
+  String codSentencias;
+}
+{ 	// si_no, sin condicion
+	< SINO > codSentencias = lista_sentencias()
+	{
+	  return codSentencias;
+	}
+}
+
+// Argumentos de una accion.
+// Se comprueba que ningun parametro declarado por valor se
+// utilice como argumento por referencia
+// Sintaxis: abrir_par() (lista_expresiones(accion))? cerrar_par()
+// Se devuelve el codigo (vacio si hay algun error)
+String argumentos(Simbolo accion) :
+{
+  List<RegistroExpr> expresiones = null;
+  RegistroExpr exp; // para cada expresion}
+  String codigo = "";
+}
+{
+  abrir_par()
+  (expresiones = lista_expresiones())?
+  cerrar_par()
+  {
+    if (accion != null) { // puede ser null si, por ej, no estaba definida
+	    int n_exp = expresiones.size(); // Numero de expresiones
+	    if (n_exp != accion.n_parametros()) { 
+	      // Debe de coincidir con el numero de parametros de la accion
+	      errorSemantico(new AccionMalInvocadaException(accion, n_exp), token);
+	    }
+	    else {
+	      codigo += gc.comentar("Apilar parametros:");
+	      for (int i = 0; i<n_exp; i++) { // Para cada argumento
+	        exp = expresiones.get(i); 
+	        if (exp != null && exp.getTipo()!=tipo_var.DESCONOCIDO) { // Si es null lo ignoramos, habia otro error anterior
+			  List<Simbolo> parametrosAccion = accion.getLista_parametros();
+		      //System.out.println(par.es_referencia());
+		      if (parametrosAccion.get(i).getVariable() != exp.getTipo()) {
+		        errorSemantico(new TipoIncorrectoException(accion, i+1, parametrosAccion.get(i).getVariable(), exp.getTipo()), token);
+		      }
+			  else if (exp.esSimbolo()) { // El parametro es un simbolo
+			  	
+			  	Simbolo par = exp.getSimbolo();
+			  	//System.out.println(par.getNombre() + " es un simbolo");			  	// System.out.println(accion.tipo_parametros() + accion.i_parametro_es_ref(1));
+	            if (accion.i_parametro_es_ref(i) && par.es_valor()) { 
+	              // no se puede pasar por referencia un parametro pasado antes por valor
+	              errorSemantico(new ParametroInvalidoException(accion, exp.getSimbolo()), token);
+			    }
+			    else if (par.es_accion()) { // ningun parametro puede ser otra accion
+			      errorSemantico(new ParametroInvalidoException("No se puede usar una accion como parametro"), token);
+			    }
+			    else if (exp.esVector()) { // Vectores tampoco
+			      errorSemantico(new ParametroInvalidoException("Solo ESCRIBIR permite vectores como parametros"), token);
+			    }
+			    else { // Simbolo ok, generacion de codigo (se apila)
+			      if (accion.i_parametro_es_ref(i) && !par.es_referencia()) { // Si es por referencia no se apila el valor
+			        codigo += gc.parametro(par.getNombre(), nivel-par.getNivel(), par.getDir());
+			      }
+			      else { // Si no, si
+			        codigo += gc.variable(par.getNombre(), nivel-par.getNivel(), par.getDir());
+			        if (!accion.i_parametro_es_ref(i) && par.es_referencia()) {
+			          // Si el parametro de la accion es por valor pero el parametro es ref, DRF adicional:
+			          codigo += "DRF\n";
+			        }
+			      }
+			    }
+			  }
+			  else { // Es un valor
+				if (accion.i_parametro_es_ref(i)) { 
+	              // Tampoco se puede pasar por referencia un valor constante
+	              errorSemantico(new ParametroInvalidoException("No se pueden pasar constantes por referencia"), token);
+			    }
+			    else { // Valor ok, generacion de codigo (se añade el de la expresion)
+			      codigo += exp.getCodigo();
+			    }
+			  }
+	        }
+	      }
+	    }
+	}
+    return codigo;
+  }
+}
+
+// Lista de expresiones. Se devuelve la lista de Registros
+// expresion() (coma() expresion())*
+List<RegistroExpr> lista_expresiones() :
+{
+  List<RegistroExpr> expresiones = new ArrayList<RegistroExpr>();
+  RegistroExpr exp; // para cada expresion
+}
+{   
+	exp = expresion() {
+	  expresiones.add(exp);
+	}
+	(
+	  coma()
+	  exp = expresion() {
+	    expresiones.add(exp);
+	  }
+    )*
+	{
+	  return expresiones;
+	}
+}
+
+// Sintaxis: 
+// comparaciones de expresiones simples (sumas de multiplicaciones)
+// expresion_simple() (operador_relacional() expresion_simple())*
+RegistroExpr expresion() :
+{
+  RegistroExpr exp = null;
+  RegistroExpr aux = null;
+  OperadorRelacional op;
+}
+{
+  exp = expresion_simple() (
+    op = operador_relacional()
+    aux = expresion_simple() {
+      if (exp != null && aux != null && !exp.esDesconocido() && !aux.esDesconocido()) {   
+	      try { 
+	        exp.comparar(aux, op, gc);
+	      }
+	      catch (TipoIncorrectoException e) {
+	        errorSemantico(e, token);
+	      }
+	   }
+    }
+  )*
+  {
+    return exp;
+  }
+}
+
+
+// Sintaxis:
+// < IGUAL > | < MENIGUAL > | < MAYIGUAL > | < MENOR > | < MAYOR > | < DISTINTO >  
+OperadorRelacional operador_relacional() :
+{
+  OperadorRelacional op = null;
+}
+{ 	// Los de comparación
+  (    < IGUAL > {
+      op = OperadorRelacional.IGUAL;
+    }
+	| < MENIGUAL > {
+      op = OperadorRelacional.MENIGUAL;
+    }
+	| < MAYIGUAL > {
+      op = OperadorRelacional.MAYIGUAL;
+    }
+	| < MENOR > {
+      op = OperadorRelacional.MENOR;
+    }
+	| < MAYOR > {
+      op = OperadorRelacional.MAYOR;
+    }
+	| < DISTINTO > {
+      op = OperadorRelacional.DISTINTO;
+    }
+  )
+  {
+    return op;
+  }
+}
+
+// WIP: devuelve el resultado de la operacion
+// Sintaxis:
+// "sumas" de "multiplicaciones" de factores (es decir, prioridad a multiplicación)
+// termino() (operador_aditivo() termino())*
+RegistroExpr expresion_simple() :
+{
+  RegistroExpr exp = null;
+  RegistroExpr aux = null;
+  Operador op;
+}
+{ 	// "sumas" de "multiplicaciones" de factores (es decir, prioridad a multiplicación)
+	exp = termino()
+	(
+	  op = operador_aditivo()
+	  aux = termino() {
+	    if (exp != null && aux != null && !exp.esDesconocido() && !aux.esDesconocido()) {
+	      // Ignoramos si exp o aux son o null o tipo DESCONOCIDO (se deben a errores anteriores)
+	      try {
+	        exp.operar(aux, op, gc);
+	      }
+	      catch (DivisionPorCeroException eDiv) {
+	        // En realidad esta excepcion es imposible en este caso
+	        exp.setTipo(tipo_var.DESCONOCIDO);
+	        
+	        errorSemantico(eDiv, token);
+	      }
+	      catch (TipoIncorrectoException eTipo) {
+	        errorSemantico(eTipo, token);
+	      }
+	    }
+	  }
+	)*
+	{
+	  return exp;
+	}
+}
+
+Operador operador_aditivo() :
+{
+  Operador op; // Devolvemos el operador
+}
+{ // +, - y or
+  (
+	< MAS > {
+	  op = Operador.SUMA;
+	}
+	| < MENOS > {
+	  op = Operador.RESTA;
+	}
+	| < OR > {
+	  op = Operador.OR;
+	}
+  )
+  {
+	return op;
+  }
+}
+
+// WIP: errores y que devuelva el Reg
+// Sintaxis:
+// prioridad a multiplicativos: factor (mult factor)*
+// factor() (operador_multiplicativo() factor())*
+RegistroExpr termino() :
+{
+  RegistroExpr exp = null;
+  RegistroExpr aux = null;
+  Operador op;
+}
+{
+	exp = factor()
+	(
+	  op = operador_multiplicativo()
+	  aux = factor() {
+	    if (exp != null && aux != null && !exp.esDesconocido() && !aux.esDesconocido()) {
+	      // Ignoramos si exp o aux son o null o tipo DESCONOCIDO (se deben a errores anteriores)
+	      try {
+	        exp.operar(aux, op, gc); // se comprueban los tipos y se genera el codigo
+	      }
+	      catch (DivisionPorCeroException eDiv) {
+	        errorSemantico(eDiv, token);
+	      }
+	      catch (TipoIncorrectoException eTipo) {
+	        errorSemantico(eTipo, token);
+	      }
+	    }
+	  }
+	)*
+	{
+	  return exp;
+	}
+}
+
+Operador operador_multiplicativo() :
+{
+  Operador op;
+}
+{ // *, div, mod y and
+  (
+	< MULT > {
+	  op = Operador.MULT;
+	}
+	| < DIV > {
+	  op = Operador.DIV;
+	}
+	| < MOD > {
+	  op = Operador.MOD;
+	}
+	| < AND >  {
+	  op = Operador.AND;
+	}
+  )
+  {
+    return op;
+  }
+}
+
+
+// Devuelve el registro de la expresión para utilización en otros nodos
+RegistroExpr factor() :
+{
+  RegistroExpr exp = null;
+  RegistroIdentificador id = null;
+  Token t;
+  Simbolo s;
+}
+{ /* "-" factor() | < NOT > factor() | abrir_par() expresion() cerrar_par()
+	| < ENTACAR > abrir_par() expresion() cerrar_par() | < CARAENT > abrir_par() expresion() cerrar_par()
+	| identificador() | < CONSTENT > | < CONSTCAR > 
+	| < TRUE > | < FALSE >
+  */
+  try {
+	t = "-" exp = factor() {
+	  if (exp.esEnt()) {
+	    exp.setValorEnt(-exp.getValorEnt()); // Se cambia de signo
+	    // Generacion:
+	    exp.setCodigo(gc.cambiarSigno(exp.getCodigo()));
+	  }
+	  else {
+	    errorSemantico(new TipoIncorrectoException("Solo se puede cambiar el signo a enteros"), t);
+	  }
+	}
+	| t = < NOT > exp = factor() {
+	  if (exp.esBool()) { // Cambiamos el valor de bool
+	    exp.setValorBool(!exp.getValorBool());
+	    // Generacion:
+	    exp.setCodigo(gc.negar(exp.getCodigo()));
+	  }
+	  else {
+	    errorSemantico(new TipoIncorrectoException("Solo se pueden negar booleanos"), t);
+	  }
+	}
+	| abrir_par() exp = expresion() cerrar_par()
+	| t = < ENTACAR > abrir_par() exp = expresion() cerrar_par() { 
+	  // entacar y caraent no conllevan generacion de codigo, solo afectan a la comprobacion de tipos
+	  if (exp != null && !exp.esDesconocido()) { // Si no ha habido error en expresion()
+		  // De ent a char. Se comprueba que no sea demasiado grande
+		  if (!exp.esEnt()) { // Comprobacion de tipo
+		    errorSemantico(new TipoIncorrectoException("entacar() solo acepta parametros enteros"), t);
+		  }
+		  else { // Es entero, ok
+		  	if (exp.esConst()) { // Si no es una variable, comprobamos valor
+			    int valor = exp.getValorEnt();
+			    if (0 <= valor && valor <= 255) {
+			      exp.setValorChar((char) valor); // cast a char (ASCII)
+			      exp.setTipo(Simbolo.tipo_var.CHAR);
+			    }
+			    else { // Desbordamiento
+				  errorSemantico(new DesbordamientoException("entacar() solo acepta valores en [0, 255]"), t);
+			    }
+			}
+			exp.toChar(); // cambio de tipo
+		}
+	  }
+	}
+	| < CARAENT > abrir_par() exp = expresion() cerrar_par() {
+	  // De char a int
+	  if (exp != null && !exp.esDesconocido()) { // Si no ha habido error en expresion()
+		  char car = exp.getValorChar();
+		  if (!exp.esChar()) { // Comprobacion de tipo
+		    errorSemantico(new TipoIncorrectoException("caraent() solo acepta caracteres"), token);
+		  }
+		  else {
+		    exp.setValorEnt((int) car); // cast a int (ASCII)
+		    // exp.setTipo(tipo_var.ENTERO); // esto ya lo hace setValorEnt
+		  }
+	  }
+	}
+	| id = identificador(false) { // Es un simbolo
+	  if (id != null) { // si no ha habido errores anteriores
+		    String nombre = id.getId();
+		  try {
+	        s = tabla.buscar_simbolo(nombre); // buscamos el simbolo
+	        exp = new RegistroExpr(s); // lo guardamos en el registro
+	        if (s.es_accion()) {
+	          errorSemantico(new AccionNoOperableException(), token);
+	        }
+	        // Generacion:
+	        if (id.esVector()) { // Si es un acceso a un vector (como v[3]):
+	        	
+	        	// Codigo para el indice:
+	        	String codigo = gc.sumar((int) s.getDir(), id.getExprIndice().getCodigo());
+				// Para el vector completo:
+			    codigo = gc.valVector(s.getNombre(), nivel-s.getNivel(), codigo);
+			    exp.setCodigo(codigo);
+	        }
+	        else if (!s.esVector()){ // No es vector
+		        String codigo = (gc.variable(s.getNombre(), nivel-s.getNivel(), s.getDir())); // diferencia de nivel y dir
+		        if (s.es_referencia()) { // Si es referencia, hay que desapilar una vez mas
+		          codigo += "DRF\n";
+		        } 
+		        exp.setCodigo(codigo);
+		    }
+		    else { // s es vector pero no un acceso: escribir(v)
+		      	exp.setEsVector(true);
+		    }
+		  	
+	      }
+	      catch (SimboloNoEncontradoException e) { // Si no se encuentra
+	        errorSemantico(e, token); // error
+	        // Y se introduce como DESCONOCIDO:
+	        try { 
+	          tabla.introducir_variable(id, tipo_var.DESCONOCIDO, nivel, sig[nivel]);
+	          // Da igual la direccion, no se va a generar codigo
+	        }
+	        catch (SimboloYaDefinidoException eDef) { // no puede estar definido
+	        }
+	      }
+	    }
+    }
+	| t = < CONSTENT > {
+	  int valor = Integer.parseInt(t.image);
+	  exp = new RegistroExpr(valor);
+	  exp.setCodigo(gc.constEnt(valor)); // Generacion
+	}
+	| t = < CONSTCAR > {
+	  char c = t.image.charAt(1); // segundo caracter de la imagen (el primero es ")
+	  //System.out.println("c = " + c + " ... " + ((int) c));
+	  exp = new RegistroExpr(c);
+	  // Generacion:
+	  exp.setCodigo(gc.constEnt((int) c)); // para la maquina char es entero
+	}
+	| < TRUE > {
+	  exp = new RegistroExpr(true);
+	  exp.setCodigo(gc.constTrue()); // Generacion
+	}
+	| < FALSE > {
+	  exp = new RegistroExpr(false);
+	  exp.setCodigo(gc.constFalse()); // generacion
+	}
+  }
+  catch (ParseException e) {
+	errorSintactico(e, "una expresión o constante");
+  }
+  {
+    return exp; // Se devuelve el registro de la expresion
+  }
+}
